@@ -8,6 +8,7 @@ import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
 import android.support.v7.app.AppCompatActivity;
 import android.widget.TextView;
+import android.util.Log;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -18,11 +19,12 @@ import java.util.Timer;
 import java.util.TimerTask;
 
 public class MainActivity extends AppCompatActivity implements SensorEventListener, TextToSpeech.OnInitListener {
+    private static final String TAG = "HumanActivityRecognition";
 
     private static final int N_SAMPLES = 200;
-    private static List<Float> x;
-    private static List<Float> y;
-    private static List<Float> z;
+    private static List<Float> acce_x_list, gyro_x_list;
+    private static List<Float> acce_y_list, gyro_y_list;
+    private static List<Float> acce_z_list, gyro_z_list;
     private TextView downstairsTextView;
 
     private TextView joggingTextView;
@@ -34,15 +36,21 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private float[] results;
     private TensorFlowClassifier classifier;
 
+    private Sensor mAcceSensor;
+    private Sensor mGyroSensor;
+
     private String[] labels = {"Downstairs", "Jogging", "Sitting", "Standing", "Upstairs", "Walking"};
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        x = new ArrayList<>();
-        y = new ArrayList<>();
-        z = new ArrayList<>();
+        acce_x_list = new ArrayList<>();
+        acce_y_list = new ArrayList<>();
+        acce_z_list = new ArrayList<>();
+        gyro_x_list = new ArrayList<>();
+        gyro_y_list = new ArrayList<>();
+        gyro_z_list = new ArrayList<>();
 
         downstairsTextView = (TextView) findViewById(R.id.downstairs_prob);
         joggingTextView = (TextView) findViewById(R.id.jogging_prob);
@@ -55,6 +63,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         textToSpeech = new TextToSpeech(this, this);
         textToSpeech.setLanguage(Locale.US);
+
+        mAcceSensor = getSensorManager().getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        mGyroSensor = getSensorManager().getDefaultSensor(Sensor.TYPE_GYROSCOPE);
     }
 
     @Override
@@ -87,15 +98,38 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     protected void onResume() {
         super.onResume();
-        getSensorManager().registerListener(this, getSensorManager().getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_GAME);
+        getSensorManager().registerListener(this, mAcceSensor, SensorManager.SENSOR_DELAY_GAME);
+        getSensorManager().registerListener(this, mGyroSensor, SensorManager.SENSOR_DELAY_GAME);
     }
 
     @Override
     public void onSensorChanged(SensorEvent event) {
-        activityPrediction();
-        x.add(event.values[0]);
-        y.add(event.values[1]);
-        z.add(event.values[2]);
+        float cur_x, cur_y, cur_z;
+        cur_x = event.values[0];
+        cur_y = event.values[1];
+        cur_z = event.values[2];
+
+        switch (event.sensor.getType()) {
+            case Sensor.TYPE_ACCELEROMETER:
+                Log.d(TAG, String.format("Accelerometer event: x = %f, y = %f, z = %f", cur_x, cur_y, cur_z));
+//        activityPrediction();
+                acce_x_list.add(cur_x);
+                acce_y_list.add(cur_y);
+                acce_z_list.add(cur_z);
+
+                break;
+            case Sensor.TYPE_GYROSCOPE:
+                Log.d(TAG, String.format("Gyroscope event: x = %f, y = %f, z = %f", cur_x, cur_y, cur_z));
+//        activityPrediction();
+                gyro_x_list.add(cur_x);
+                gyro_y_list.add(cur_y);
+                gyro_z_list.add(cur_z);
+
+                break;
+            default:
+                Log.e(TAG, "Unknown sensor event: " + event.sensor.getStringType());
+                break;
+        }
     }
 
     @Override
@@ -104,11 +138,16 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     }
 
     private void activityPrediction() {
-        if (x.size() == N_SAMPLES && y.size() == N_SAMPLES && z.size() == N_SAMPLES) {
+        if (acce_x_list.size() == N_SAMPLES && acce_y_list.size() == N_SAMPLES && acce_z_list.size() == N_SAMPLES) {
             List<Float> data = new ArrayList<>();
-            data.addAll(x);
-            data.addAll(y);
-            data.addAll(z);
+            for (int i = 0; i < acce_x_list.size(); i++) {
+                data.add(acce_x_list.get(i));
+                data.add(acce_y_list.get(i));
+                data.add(acce_z_list.get(i));
+            }
+//            data.addAll(acce_x_list);
+//            data.addAll(acce_y_list);
+//            data.addAll(acce_z_list);
 
             results = classifier.predictProbabilities(toFloatArray(data));
 
@@ -119,9 +158,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             upstairsTextView.setText(Float.toString(round(results[4], 2)));
             walkingTextView.setText(Float.toString(round(results[5], 2)));
 
-            x.clear();
-            y.clear();
-            z.clear();
+            acce_x_list.clear();
+            acce_y_list.clear();
+            acce_z_list.clear();
         }
     }
 
